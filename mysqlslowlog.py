@@ -33,14 +33,13 @@ re_setts_cutter = re.compile("\nSET timestamp=\d+;\n" ,re.IGNORECASE | re.M| re.
 
 tech_exclude_properties = { 'user@host' : True , 'thread_id' : True}
 
-column_names_dt = ['timestamp']
+column_names_ts = ['timestamp']
 column_names_str = ['schema','sqltext']
 column_names_int =  ['rows_sent','rows_examined','tmp_table_sizes',]
 column_names_float =  ['query_time','lock_time',]
 column_names_bool =  ['tmp_table_on_disk','full_scan']
 
-column_names = ['timestamp', 'schema','sqltext','rows_sent','rows_examined','tmp_table_sizes',
-    'query_time','lock_time','tmp_table_on_disk','full_scan']
+column_names = column_names_ts + column_names_str + column_names_int + column_names_float + column_names_bool
 
 def read( filename:str ,  save_sql: bool = True):
   """ Read mysql log file as pandas dataframe.
@@ -49,9 +48,9 @@ def read( filename:str ,  save_sql: bool = True):
   :param save_sql: save or noy  query text when parsing. Removing will save memory.
   :return: pandas.DataFrame
 
-
   """
-  df = pd.DataFrame(columns = column_names)
+  # It is more efficently create pandas dataframe from list of named lists.
+  data = {x: list() for x in column_names}
 
   if filename.endswith('.gz'):
     f = gzip.open(filename,'rt',encoding='utf-8')
@@ -66,7 +65,7 @@ def read( filename:str ,  save_sql: bool = True):
               int(ts_match[4]), int(ts_match[5]), int(ts_match[6]))
           block = line[ts_match.end():]
           # обработаем в цикле совпадение с регуляркой блоков строк
-          lastpost = 0
+          lastpos = 0
           record = {}
           for m in re_split_stats_and_sql.finditer(block):
             for kv in m[1].split('  '):
@@ -85,26 +84,29 @@ def read( filename:str ,  save_sql: bool = True):
             record['sqltext']=sqlblock
           else :
             record['sqltext']= ''
-          # TODO это следует переписать полностью
-          # нужно создать наборы tuples и после полного чтения файла создавать dataframe
-          # для небольших по размеру файлов логов это неважно. Но сейчас pt-query-digest на perl работает даже быстрее этого кода.
-          df_dictionary = pd.DataFrame([record],columns=column_names)
-          df = pd.concat([df, df_dictionary], ignore_index=True)
+
+          for name in column_names :
+            if name in record:
+              data[name].append(record[name])
+            else:
+              data[name].append(None)
 
       else:
         pass ; # skip not parsed. some records without timestamp. this is  restart server records.
 
-  # TODO вверху есть типы списки типов. Нужно сконвертировать в цикле каждую колонку или что-то получше
-  #
-  df['timestamp']=pd.to_datetime(df['timestamp'])
-  df['query_time']=pd.to_numeric(df['query_time'],errors='coerce').astype(float)
-  df['lock_time']=pd.to_numeric(df['lock_time'],errors='coerce').astype(float)
-  df['rows_examined']=pd.to_numeric(df['rows_examined'],errors='coerce').astype(float)
-  df['tmp_table_sizes']=pd.to_numeric(df['tmp_table_sizes'],errors='coerce').astype(float)
-  df['rows_sent']=pd.to_numeric(df['rows_sent'],errors='coerce').astype('int64')
 
-  df['tmp_table_on_disk']=df['tmp_table_on_disk'].astype(bool)
-  df['full_scan']=df['full_scan'].astype(bool)
+  df = pd.DataFrame.from_dict(data)
+  # now df is list of string. Convert to appropriate numpy types.
+  for n in column_names_bool:
+    df[n] = df[n].astype('bool')
+  for n in column_names_float:
+    df[n]= pd.to_numeric(df[n],errors='coerce').astype('float')
+
+  for n in column_names_int:
+    df[n] = df[n].fillna(0).astype('int64')
+
+  for n in column_names_ts:
+    df[n]=pd.to_datetime(df[n])
 
 
   return df
