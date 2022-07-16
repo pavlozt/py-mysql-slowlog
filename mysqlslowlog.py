@@ -35,9 +35,10 @@ tech_exclude_properties = { 'user@host' : True , 'thread_id' : True}
 
 column_names_ts = ['timestamp']
 column_names_str = ['schema','sqltext']
-column_names_int =  ['rows_sent','rows_examined','tmp_table_sizes',]
+column_names_int =  ['rows_sent','rows_examined','rows_affected', 'bytes_sent','tmp_table_sizes',
+    'tmp_tables','tmp_disk_tables','merge_passes']
 column_names_float =  ['query_time','lock_time',]
-column_names_bool =  ['tmp_table_on_disk','full_scan']
+column_names_bool =  ['full_scan','full_join','tmp_table', 'tmp_table_on_disk','filesort','filesort_on_disk',]
 
 column_names = column_names_ts + column_names_str + column_names_int + column_names_float + column_names_bool
 
@@ -57,7 +58,8 @@ def read( filename:str ,  save_sql: bool = True):
   else:
     f = open(filename,'rt',encoding='utf-8')
   with f:
-    for line in myreadlines(f, ";\n" + timedelimiter):
+    #for line in myreadlines(f, ";\n" + timedelimiter):
+    for line in myreadlines(f, "\n" + timedelimiter):
       ts_match = re_initial_timestamp.search(line)
       if  ts_match :
           # конструируем время
@@ -75,12 +77,13 @@ def read( filename:str ,  save_sql: bool = True):
                 record[k]=v
               lastpos = m.end()
           record['timestamp'] = ts.strftime('%Y/%m/%d %H:%M:%S')
-          #print('parsed', record)
+          # print('parsed', record)
           if save_sql:
             sqlblock=block[lastpos:]
 
             sqlblock = re_usedb_cutter.sub('',sqlblock)
             sqlblock = re_setts_cutter.sub('',sqlblock)
+            # TODO : make sql "fingerprint"
             record['sqltext']=sqlblock
           else :
             record['sqltext']= ''
@@ -97,8 +100,9 @@ def read( filename:str ,  save_sql: bool = True):
 
   df = pd.DataFrame.from_dict(data)
   # now df is list of string. Convert to appropriate numpy types.
+  bool_replace_map = {'No': False, 'Yes': True}
   for n in column_names_bool:
-    df[n] = df[n].astype('bool')
+    df[n] = df[n].replace(bool_replace_map).astype('bool')
   for n in column_names_float:
     df[n]= pd.to_numeric(df[n],errors='coerce').astype('float')
 
