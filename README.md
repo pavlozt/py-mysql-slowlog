@@ -1,4 +1,5 @@
-# PyMysqlSlowLog  - module for reading mysql slow log with Pandas #
+# PyMysqlSlowLog #
+### reading mysql slow log with Pandas ###
 
 
 ## Example of usage ##
